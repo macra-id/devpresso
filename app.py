@@ -286,7 +286,7 @@ class TransactionsWindow(QWidget):
                 writer.writerow(["Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)"])  # Date first
                 for row in records:
                     writer.writerow(row)  # Write each row of data
-                writer.writerow(["", "", "", "Total", total_quantity, f"Rp {total_amount:,.0f}", ""])  # Total row
+                writer.writerow(["", "", "", "Total", total_quantity, total_amount])  # Total row
 
             QMessageBox.information(self, "Success", f"Transactions saved to {file_name}")
 
@@ -311,7 +311,7 @@ class TransactionsWindow(QWidget):
             sheet.append(["Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)"])  # Date first
             for row in records:
                 sheet.append(row)  # Write each row of data
-            sheet.append(["", "", "", "Total", total_quantity, f"Rp {total_amount:,.0f}", ""])  # Total row
+            sheet.append(["", "", "", "Total", total_quantity, total_amount])  # Total row
 
             workbook.save(file_name)
             QMessageBox.information(self, "Success", f"Transactions saved to {file_name}")
