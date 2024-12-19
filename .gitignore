@@ -1,0 +1,7 @@
+env/
+devpresso_db.sqlite
+build/
+dist/
+app.spec
+dekstop.ini
+devpresso_db.db
