@@ -17,7 +17,7 @@ DB_NAME = "devpresso_db.sqlite"
 class MainMenu(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Main Menu")
+        self.setWindowTitle("Devpresso")
         self.setGeometry(100, 100, 400, 200)
         self.setMinimumSize(300, 150)  # Set a minimum size for dynamic resizing
 
