@@ -88,7 +88,7 @@ class TransactionsWindow(QWidget):
         super().__init__()
         self.setWindowTitle("Transactions")
         self.setGeometry(150, 150, 800, 500)
-        self.setMinimumSize(600, 400)
+        self.setMinimumSize(1000, 400)
 
         # Main layout
         layout = QVBoxLayout()
