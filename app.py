@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QComboBox, QMessageBox, QInputDialog, QFileDialog, QScrollArea, QHBoxLayout, QDateEdit, QLabel
 )
 from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
 from PyQt5.QtCore import (QDate, Qt)
 from PyQt5.QtGui import QPainter, QFont
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
@@ -489,7 +490,21 @@ class TransactionsWindow(QWidget):
                 workbook = Workbook()
                 sheet = workbook.active
                 sheet.title = "Transactions"
-                sheet.append(["Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)", "Paid", "Payment Method"])
+                
+                # Add header row
+                headers = ["Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)", "Paid", "Payment Method"]
+                sheet.append(headers)
+
+                # Style the header row
+                header_fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+                header_font = Font(bold=True, color="FFFFFF")
+                header_alignment = Alignment(horizontal="center")
+
+                for col_num, header in enumerate(headers, start=1):
+                    cell = sheet.cell(row=1, column=col_num)
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = header_alignment
 
                 # Data rows
                 for row in records:
