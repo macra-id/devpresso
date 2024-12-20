@@ -3,10 +3,10 @@ import sqlite3
 import csv
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QMainWindow, QPushButton, QVBoxLayout, QTableWidget,
-    QTableWidgetItem, QDialog, QMessageBox, QInputDialog, QFileDialog, QScrollArea, QHBoxLayout, QDateEdit
+    QTableWidgetItem, QComboBox, QMessageBox, QInputDialog, QFileDialog, QScrollArea, QHBoxLayout, QDateEdit
 )
 from openpyxl import Workbook
-from PyQt5.QtCore import QDate
+from PyQt5.QtCore import (QDate, Qt)
 
 # Database connection settings
 DB_NAME = "devpresso_db.sqlite"
@@ -40,12 +40,12 @@ class MainMenu(QMainWindow):
 
     def create_buttons(self, layout):
         # Button to go to Transactions Window
-        transactions_btn = QPushButton("Go to Transactions", self)
+        transactions_btn = QPushButton("Transactions", self)
         transactions_btn.clicked.connect(self.open_transactions_window)
         layout.addWidget(transactions_btn)
 
         # Button to go to Drink Menu Window
-        drink_menu_btn = QPushButton("Go to Drink Menu", self)
+        drink_menu_btn = QPushButton("Drinks Menu", self)
         drink_menu_btn.clicked.connect(self.open_drink_menu_window)
         layout.addWidget(drink_menu_btn)
 
@@ -80,8 +80,8 @@ class TransactionsWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Transactions")
-        self.setGeometry(150, 150, 800, 500)  # Increased width and height for better spacing
-        self.setMinimumSize(600, 400)  # Allow dynamic resizing
+        self.setGeometry(150, 150, 800, 500)
+        self.setMinimumSize(600, 400)
 
         # Main layout
         layout = QVBoxLayout()
@@ -89,14 +89,17 @@ class TransactionsWindow(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
 
         # Table to display transactions
-        self.transactions_table = QTableWidget(0, 7)
+        self.transactions_table = QTableWidget(0, 9)
         self.transactions_table.setHorizontalHeaderLabels(
-            ["No","Date","Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)"]
+            ["No", "Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)", "Paid", "Payment Method"]
         )
         self.transactions_table.horizontalHeader().setStretchLastSection(True)
         self.transactions_table.verticalHeader().setVisible(False)
         self.transactions_table.setAlternatingRowColors(True)
         layout.addWidget(self.transactions_table)
+
+        # Enable editing and track changes
+        self.transactions_table.itemChanged.connect(self.handle_item_changed)
 
         # Button layout
         btn_layout = QHBoxLayout()
@@ -111,6 +114,7 @@ class TransactionsWindow(QWidget):
         self.delete_btn = QPushButton("Delete Transaction")
         self.delete_btn.clicked.connect(self.delete_transaction)
         btn_layout.addWidget(self.delete_btn)
+
 
         # Button to download transactions as CSV
         self.download_csv_btn = QPushButton("Download CSV")
@@ -140,24 +144,99 @@ class TransactionsWindow(QWidget):
                 variant TEXT,
                 quantity INTEGER,
                 total_price REAL,
-                date TEXT  -- New column for storing the transaction date
+                date TEXT,
+                paid BOOLEAN DEFAULT 0,  -- New column for paid status
+                payment_method TEXT DEFAULT '-' -- New column for payment method
             )
         """)
         connection.commit()
         connection.close()
 
     def load_transactions(self):
+            connection = sqlite3.connect(DB_NAME)
+            cursor = connection.cursor()
+            cursor.execute("""
+                SELECT id, date, customer_name, drink_type, variant, quantity, total_price, paid, payment_method 
+                FROM transactions
+            """)
+            records = cursor.fetchall()
+            self.transactions_table.setRowCount(0)
+
+            for row_data in records:
+                row_count = self.transactions_table.rowCount()
+                self.transactions_table.insertRow(row_count)
+                for col, data in enumerate(row_data):
+                    if col == 7:  # Paid column
+                        checkbox = QTableWidgetItem()
+                        checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                        checkbox.setCheckState(Qt.Checked if data else Qt.Unchecked)
+                        self.transactions_table.setItem(row_count, col, checkbox)
+                    elif col == 8:  # Payment Method column
+                        combo = QComboBox()
+                        combo.addItems(["QRIS", "Cash", "-"])
+                        combo.setCurrentText(data)
+                        combo.currentIndexChanged.connect(lambda index, r=row_count, c=col: self.handle_payment_method_change(r, c))
+                        self.transactions_table.setCellWidget(row_count, col, combo)
+                    elif col == 5:  # Total Price column (col 5 is total_price)
+                        if isinstance(data, (int, float)):
+                            # Convert to integer (if float) and format with period as thousand separator
+                            formatted_data = f"{int(data):,}".replace(",", ".")
+                        else:
+                            formatted_data = f"{int(float(data.replace(',', ''))):,}".replace(",", ".")
+                        
+                        # Ensure the formatted data is always an integer string with thousand separators
+                        self.transactions_table.setItem(row_count, col, QTableWidgetItem(formatted_data))
+                    else:
+                        self.transactions_table.setItem(row_count, col, QTableWidgetItem(str(data)))
+
+            cursor.close()
+            connection.close()
+
+    def handle_item_changed(self, item):
+        row = item.row()
+        column = item.column()
+
+        # Map table headers to database column names
+        column_mapping = {
+            "No": "id",
+            "Date": "date",
+            "Customer Name": "customer_name",
+            "Drink Type": "drink_type",
+            "Variant": "variant",
+            "Quantity": "quantity",
+            "Total Price (Rp)": "total_price",
+            "Paid": "paid",
+            "Payment Method": "payment_method",
+        }
+
+        header_text = self.transactions_table.horizontalHeaderItem(column).text()
+        column_name = column_mapping.get(header_text)
+
+        if not column_name:
+            return  # If no mapping exists, skip
+
+        transaction_id = self.transactions_table.item(row, 0).text()  # ID is in the first column
+        new_value = item.text()
+
+        # Special handling for Paid column (checkbox)
+        if column_name == "paid":
+            new_value = 1 if item.checkState() == Qt.Checked else 0
+
         connection = sqlite3.connect(DB_NAME)
         cursor = connection.cursor()
-        cursor.execute("SELECT id, date, customer_name, drink_type, variant, quantity, total_price FROM transactions")
-        records = cursor.fetchall()
-        self.transactions_table.setRowCount(0)
-        for row_data in records:
-            row_count = self.transactions_table.rowCount()
-            self.transactions_table.insertRow(row_count)
-            for col, data in enumerate(row_data):
-                self.transactions_table.setItem(row_count, col, QTableWidgetItem(str(data)))
-        cursor.close()
+        cursor.execute(f"UPDATE transactions SET {column_name} = ? WHERE id = ?", (new_value, transaction_id))
+        connection.commit()
+        connection.close()
+
+    def handle_payment_method_change(self, row, column):
+        transaction_id = self.transactions_table.item(row, 0).text()
+        combo = self.transactions_table.cellWidget(row, column)
+        new_payment_method = combo.currentText()
+
+        connection = sqlite3.connect(DB_NAME)
+        cursor = connection.cursor()
+        cursor.execute("UPDATE transactions SET payment_method = ? WHERE id = ?", (new_payment_method, transaction_id))
+        connection.commit()
         connection.close()
 
     def add_transaction(self):
@@ -220,7 +299,7 @@ class TransactionsWindow(QWidget):
             connection.close()
             return
 
-        total_price = price * quantity
+        total_price = int(price * quantity)  # Store as integer (no decimals)
 
         # Get today's date
         transaction_date = QDate.currentDate().toString("yyyy-MM-dd")  # Automatically set the date to today
@@ -234,7 +313,9 @@ class TransactionsWindow(QWidget):
         connection.commit()
         cursor.close()
         connection.close()
-        self.load_transactions()
+
+        self.load_transactions()  # Reload the transaction list after insertion
+
 
     def delete_transaction(self):
         selected_row = self.transactions_table.currentRow()
@@ -263,8 +344,6 @@ class TransactionsWindow(QWidget):
 
             # Refresh the table after deletion (reload the data)
             self.load_transactions()
-
-
         
     def download_transactions_csv(self):
         options = QFileDialog.Options()
@@ -272,21 +351,33 @@ class TransactionsWindow(QWidget):
         if file_name:
             connection = sqlite3.connect(DB_NAME)
             cursor = connection.cursor()
-            cursor.execute("SELECT date, customer_name, drink_type, variant, quantity, total_price FROM transactions")
+            cursor.execute("""
+                SELECT date, customer_name, drink_type, variant, quantity, total_price, 
+                    CASE WHEN paid = 1 THEN 'True' ELSE 'False' END as paid, payment_method 
+                FROM transactions
+            """)
             records = cursor.fetchall()
             connection.close()
 
-            # Calculating totals for quantity and amount
-            total_quantity = sum(record[4] for record in records)  # column 4 is quantity
-            total_amount = sum(record[5] for record in records)  # column 5 is total_price
+            # Calculating totals for quantity and amount as integers
+            total_quantity = sum(int(record[4]) for record in records)  # column 4 is quantity
+            total_amount = sum(int(record[5]) for record in records)  # column 5 is total_price
+            total_paid_true = sum(1 for record in records if record[6] == 'True')  # Count 'True' values for paid
 
             # Writing data to CSV file
             with open(file_name, mode="w", newline="") as file:
                 writer = csv.writer(file)
-                writer.writerow(["Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)"])  # Date first
+                writer.writerow(["Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)", "Paid", "Payment Method"])
                 for row in records:
-                    writer.writerow(row)  # Write each row of data
-                writer.writerow(["", "", "", "Total", total_quantity, total_amount])  # Total row
+                    formatted_row = list(row)
+                    # Ensure total_price is written as an integer
+                    formatted_row[5] = int(formatted_row[5])  # Convert total_price to integer
+                    writer.writerow(formatted_row)
+
+                # Add totals row with 'Paid' column count (e.g., 2/3)
+                paid_ratio = f"{total_paid_true}/{len(records)}"
+                total_row = ["", "", "", "Total", total_quantity, total_amount, paid_ratio, ""]
+                writer.writerow(total_row)
 
             QMessageBox.information(self, "Success", f"Transactions saved to {file_name}")
 
@@ -296,26 +387,44 @@ class TransactionsWindow(QWidget):
         if file_name:
             connection = sqlite3.connect(DB_NAME)
             cursor = connection.cursor()
-            cursor.execute("SELECT date, customer_name, drink_type, variant, quantity, total_price FROM transactions")
+            cursor.execute("""
+                SELECT date, customer_name, drink_type, variant, quantity, total_price, 
+                    CASE WHEN paid = 1 THEN 'True' ELSE 'False' END as paid, payment_method 
+                FROM transactions
+            """)
             records = cursor.fetchall()
             connection.close()
 
-            # Calculating totals for quantity and amount
-            total_quantity = sum(record[4] for record in records)  # column 4 is quantity
-            total_amount = sum(record[5] for record in records)  # column 5 is total_price
+            # Calculating totals for quantity and amount as integers
+            total_quantity = sum(int(record[4]) for record in records)  # column 4 is quantity
+            total_amount = sum(int(record[5]) for record in records)  # column 5 is total_price
+            total_paid_true = sum(1 for record in records if record[6] == 'True')  # Count 'True' values for paid
 
             # Writing data to Excel file
             workbook = Workbook()
             sheet = workbook.active
             sheet.title = "Transactions"
-            sheet.append(["Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)"])  # Date first
+            sheet.append(["Date", "Customer Name", "Drink Type", "Variant", "Quantity", "Total Price (Rp)", "Paid", "Payment Method"])
+
+            # Data rows
             for row in records:
-                sheet.append(row)  # Write each row of data
-            sheet.append(["", "", "", "Total", total_quantity, total_amount])  # Total row
+                formatted_row = list(row)
+                formatted_row[5] = int(formatted_row[5])  # Ensure total_price is stored as an integer
+                sheet.append(formatted_row)
+
+            # Total row at the bottom
+            paid_ratio = f"{total_paid_true}/{len(records)}"
+            total_row = ["", "", "", "Total", total_quantity, total_amount, paid_ratio, ""]
+            sheet.append(total_row)
+
+            # Apply formatting for thousands separator
+            for row_idx in range(2, len(records) + 3):  # Rows with data and total
+                sheet.cell(row=row_idx, column=6).number_format = '#,##0'  # Format Total Price (Rp)
+            sheet.cell(row=len(records) + 3, column=5).number_format = '#,##0'  # Format Total Quantity
+            sheet.cell(row=len(records) + 3, column=6).number_format = '#,##0'  # Format Total Amount
 
             workbook.save(file_name)
             QMessageBox.information(self, "Success", f"Transactions saved to {file_name}")
-
 
 
 class DrinkMenuWindow(QWidget):
